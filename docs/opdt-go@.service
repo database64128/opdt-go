@@ -1,0 +1,10 @@
+[Unit]
+Description=Outgoing Port Discovery Tool Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/opdt-go -confPath /etc/opdt-go/%i.json -zapConf systemd
+
+[Install]
+WantedBy=multi-user.target
