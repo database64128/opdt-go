@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/database64128/opdt-go/conn"
@@ -118,10 +119,13 @@ func (c *Client) Run(ctx context.Context, interval time.Duration) (<-chan Result
 		return nil, err
 	}
 
-	ctrlCh := make(chan struct{})
 	resultCh := make(chan Result)
+	var wg sync.WaitGroup
+	wg.Add(2)
 
 	go func() {
+		defer wg.Done()
+
 		reqBuf := make([]byte, packet.RequestPacketSize)
 
 		for {
@@ -133,7 +137,6 @@ func (c *Client) Run(ctx context.Context, interval time.Duration) (<-chan Result
 
 			select {
 			case <-ctx.Done():
-				ctrlCh <- struct{}{}
 				return
 			case <-time.After(interval):
 			}
@@ -141,13 +144,14 @@ func (c *Client) Run(ctx context.Context, interval time.Duration) (<-chan Result
 	}()
 
 	go func() {
+		defer wg.Done()
+
 		respBuf := make([]byte, packet.ResponsePacketSize)
 
 		for {
 			n, _, flags, packetSourceAddrPort, err := c.serverConn.ReadMsgUDPAddrPort(respBuf, nil)
 			if err != nil {
 				if errors.Is(err, os.ErrDeadlineExceeded) {
-					ctrlCh <- struct{}{}
 					return
 				}
 				resultCh <- ErrResult(Error{Message: "failed to receive packet", PeerAddrPort: packetSourceAddrPort, PacketLength: n, Err: err})
@@ -168,7 +172,6 @@ func (c *Client) Run(ctx context.Context, interval time.Duration) (<-chan Result
 
 			select {
 			case <-ctx.Done():
-				ctrlCh <- struct{}{}
 				return
 			case <-time.After(interval):
 			default:
@@ -179,8 +182,7 @@ func (c *Client) Run(ctx context.Context, interval time.Duration) (<-chan Result
 	go func() {
 		<-ctx.Done()
 		c.serverConn.SetReadDeadline(time.Now())
-		<-ctrlCh
-		<-ctrlCh
+		wg.Wait()
 		close(resultCh)
 	}()
 
