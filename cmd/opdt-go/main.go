@@ -3,15 +3,16 @@ package main
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"net/netip"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/database64128/opdt-go/client"
+	"github.com/database64128/opdt-go/jsonhelper"
 	"github.com/database64128/opdt-go/logging"
 	"github.com/database64128/opdt-go/server"
 	"go.uber.org/zap"
@@ -34,35 +35,41 @@ func (b *byteSliceFlag) Set(s string) error {
 }
 
 var (
-	serverConfPath = flag.String("server", "", "Run as server using the specified config file")
-	clientServer   = flag.String("client", "", "Run as client using the specified server address")
-	clientBind     = flag.String("clientBind", "", "Bind address in client mode (default: let system choose)")
-	clientInterval = flag.Duration("clientInterval", 0, "Keep sending at specified interval in client mode")
-	clientAttempts = flag.Int("clientAttempts", 5, "Number of attempts to send in client mode. Set to 0 to send indefinitely.")
-	zapConf        = flag.String("zapConf", "", "Preset name or path to JSON configuration file for building the zap logger.\nAvailable presets: console (default), systemd, production, development")
-	logLevel       = flag.String("logLevel", "", "Override the logger configuration's log level.\nAvailable levels: debug, info, warn, error, dpanic, panic, fatal")
+	serverConfPath string
+	clientServer   string
+	clientPSK      byteSliceFlag
+	clientBind     string
+	clientInterval time.Duration
+	clientAttempts int
+	zapConf        string
+	logLevel       zapcore.Level
 )
 
-var clientPSK byteSliceFlag
-
 func init() {
+	flag.StringVar(&serverConfPath, "server", "", "Run as server using the specified config file")
+	flag.StringVar(&clientServer, "client", "", "Run as client using the specified server address")
 	flag.Var(&clientPSK, "clientPSK", "Pre-shared key in client mode")
+	flag.StringVar(&clientBind, "clientBind", "", "Bind address in client mode (default: let system choose)")
+	flag.DurationVar(&clientInterval, "clientInterval", 0, "Keep sending at specified interval in client mode")
+	flag.IntVar(&clientAttempts, "clientAttempts", 5, "Number of attempts to send in client mode. Set to 0 to send indefinitely.")
+	flag.StringVar(&zapConf, "zapConf", "", "Preset name or path to JSON configuration file for building the zap logger.\nAvailable presets: console (default), systemd, production, development")
+	flag.TextVar(&logLevel, "logLevel", zapcore.InvalidLevel, "Override the logger configuration's log level.\nAvailable levels: debug, info, warn, error, dpanic, panic, fatal")
 }
 
 func main() {
 	flag.Parse()
 
-	serverMode := *serverConfPath != ""
-	clientMode := *clientServer != ""
+	serverMode := serverConfPath != ""
+	clientMode := clientServer != ""
 	if serverMode == clientMode {
-		fmt.Println("Either -server <path> or -client <address> must be specified.")
+		fmt.Fprintln(os.Stderr, "Either -server <path> or -client <address> must be specified.")
 		flag.Usage()
 		os.Exit(1)
 	}
 
 	var zc zap.Config
 
-	switch *zapConf {
+	switch zapConf {
 	case "console", "":
 		zc = logging.NewProductionConsoleConfig(false)
 	case "systemd":
@@ -72,54 +79,28 @@ func main() {
 	case "development":
 		zc = zap.NewDevelopmentConfig()
 	default:
-		f, err := os.Open(*zapConf)
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
-		d := json.NewDecoder(f)
-		d.DisallowUnknownFields()
-		err = d.Decode(&zc)
-		f.Close()
-		if err != nil {
-			fmt.Println(err)
+		if err := jsonhelper.OpenAndDecodeDisallowUnknownFields(zapConf, &zc); err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to load zap logger config:", err)
 			os.Exit(1)
 		}
 	}
 
-	if *logLevel != "" {
-		l, err := zapcore.ParseLevel(*logLevel)
-		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
-		}
-		zc.Level.SetLevel(l)
+	if logLevel != zapcore.InvalidLevel {
+		zc.Level.SetLevel(logLevel)
 	}
 
 	logger, err := zc.Build()
 	if err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(os.Stderr, "Failed to build logger:", err)
 		os.Exit(1)
 	}
 	defer logger.Sync()
 
 	if serverMode {
-		f, err := os.Open(*serverConfPath)
-		if err != nil {
-			logger.Fatal("Failed to open config file",
-				zap.Stringp("path", serverConfPath),
-				zap.Error(err),
-			)
-		}
-
-		d := json.NewDecoder(f)
-		d.DisallowUnknownFields()
 		var sc server.Config
-		err = d.Decode(&sc)
-		f.Close()
-		if err != nil {
-			logger.Fatal("Failed to decode config",
-				zap.Stringp("path", serverConfPath),
+		if err = jsonhelper.OpenAndDecodeDisallowUnknownFields(serverConfPath, &sc); err != nil {
+			logger.Fatal("Failed to load server config",
+				zap.String("path", serverConfPath),
 				zap.Error(err),
 			)
 		}
@@ -151,38 +132,42 @@ func main() {
 	}
 
 	if clientMode {
-		serverAddrPort, err := netip.ParseAddrPort(*clientServer)
+		serverAddrPort, err := netip.ParseAddrPort(clientServer)
 		if err != nil {
 			logger.Fatal("Failed to parse server address",
-				zap.Stringp("serverAddress", clientServer),
+				zap.String("serverAddress", clientServer),
 				zap.Error(err),
 			)
 		}
 
 		clientConfig := client.Config{
 			ServerAddrPort: serverAddrPort,
-			BindAddress:    *clientBind,
+			BindAddress:    clientBind,
 			PSK:            clientPSK,
 		}
 
 		c, err := clientConfig.Client()
 		if err != nil {
 			logger.Fatal("Failed to initialize client",
-				zap.Stringp("serverAddress", clientServer),
-				zap.Stringp("bindAddress", clientBind),
+				zap.String("serverAddress", clientServer),
+				zap.String("bindAddress", clientBind),
 				zap.Binary("psk", clientPSK),
 				zap.Error(err),
 			)
 		}
 
-		ctx, _ := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+		go func() {
+			<-ctx.Done()
+			stop()
+		}()
 
-		if *clientAttempts == 0 {
-			resultCh, err := c.Run(ctx, *clientInterval)
+		if clientAttempts == 0 {
+			resultCh, err := c.Run(ctx, clientInterval)
 			if err != nil {
 				logger.Fatal("Failed to start client",
-					zap.Stringp("serverAddress", clientServer),
-					zap.Stringp("bindAddress", clientBind),
+					zap.String("serverAddress", clientServer),
+					zap.String("bindAddress", clientBind),
 					zap.Binary("psk", clientPSK),
 					zap.Error(err),
 				)
@@ -196,7 +181,7 @@ func main() {
 				}
 			}
 		} else {
-			clientAddrPort, err := c.Get(ctx, *clientInterval, *clientAttempts)
+			clientAddrPort, err := c.Get(ctx, clientInterval, clientAttempts)
 			if err != nil {
 				logger.Error("Failed to get client address", zap.Error(err))
 			}
