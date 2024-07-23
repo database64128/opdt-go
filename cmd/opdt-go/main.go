@@ -52,8 +52,8 @@ func init() {
 	flag.StringVar(&clientBind, "clientBind", "", "Bind address in client mode (default: let system choose)")
 	flag.DurationVar(&clientInterval, "clientInterval", 0, "Keep sending at specified interval in client mode")
 	flag.IntVar(&clientAttempts, "clientAttempts", 5, "Number of attempts to send in client mode. Set to 0 to send indefinitely.")
-	flag.StringVar(&zapConf, "zapConf", "", "Preset name or path to JSON configuration file for building the zap logger.\nAvailable presets: console (default), systemd, production, development")
-	flag.TextVar(&logLevel, "logLevel", zapcore.InvalidLevel, "Override the logger configuration's log level.\nAvailable levels: debug, info, warn, error, dpanic, panic, fatal")
+	flag.StringVar(&zapConf, "zapConf", "console", "Preset name or path to the JSON configuration file for building the zap logger.\nAvailable presets: console, console-nocolor, console-notime, systemd, production, development")
+	flag.TextVar(&logLevel, "logLevel", zapcore.InfoLevel, "Log level for the console and systemd presets.\nAvailable levels: debug, info, warn, error, dpanic, panic, fatal")
 }
 
 func main() {
@@ -67,29 +67,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	var zc zap.Config
-
-	switch zapConf {
-	case "console", "":
-		zc = logging.NewProductionConsoleConfig(false)
-	case "systemd":
-		zc = logging.NewProductionConsoleConfig(true)
-	case "production":
-		zc = zap.NewProductionConfig()
-	case "development":
-		zc = zap.NewDevelopmentConfig()
-	default:
-		if err := jsonhelper.OpenAndDecodeDisallowUnknownFields(zapConf, &zc); err != nil {
-			fmt.Fprintln(os.Stderr, "Failed to load zap logger config:", err)
-			os.Exit(1)
-		}
-	}
-
-	if logLevel != zapcore.InvalidLevel {
-		zc.Level.SetLevel(logLevel)
-	}
-
-	logger, err := zc.Build()
+	logger, err := logging.NewZapLogger(zapConf, logLevel)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to build logger:", err)
 		os.Exit(1)
