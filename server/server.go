@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"errors"
 	"net"
 	"net/netip"
@@ -38,8 +39,9 @@ type Server struct {
 	wg            sync.WaitGroup
 }
 
-func (s *Server) Start() error {
-	serverConn, err := net.ListenPacket("udp", s.listenAddress)
+func (s *Server) Start(ctx context.Context) error {
+	var lc net.ListenConfig
+	serverConn, err := lc.ListenPacket(ctx, "udp", s.listenAddress)
 	if err != nil {
 		return err
 	}

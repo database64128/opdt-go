@@ -74,6 +74,12 @@ func main() {
 	}
 	defer logger.Sync()
 
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-ctx.Done()
+		stop()
+	}()
+
 	if serverMode {
 		var sc server.Config
 		if err = jsonhelper.OpenAndDecodeDisallowUnknownFields(serverConfPath, &sc); err != nil {
@@ -92,7 +98,7 @@ func main() {
 			)
 		}
 
-		if err = s.Start(); err != nil {
+		if err = s.Start(ctx); err != nil {
 			logger.Fatal("Failed to start server",
 				zap.String("listenAddress", sc.ListenAddress),
 				zap.Binary("psk", sc.PSK),
@@ -102,11 +108,9 @@ func main() {
 
 		logger.Info("Started server", zap.String("listenAddress", sc.ListenAddress))
 
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-		sig := <-sigCh
-		logger.Info("Received signal, stopping...", zap.Stringer("signal", sig))
+		<-ctx.Done()
 		s.Stop()
+		logger.Info("Stopped server")
 	}
 
 	if clientMode {
@@ -133,12 +137,6 @@ func main() {
 				zap.Error(err),
 			)
 		}
-
-		ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-		go func() {
-			<-ctx.Done()
-			stop()
-		}()
 
 		if clientAttempts == 0 {
 			resultCh, err := c.Run(ctx, clientInterval)
