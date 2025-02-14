@@ -32,9 +32,7 @@ func (c *Client) PutRequest(req []byte) {
 	_ = req[RequestPacketSize-1]
 
 	nonce := req[:chacha20poly1305.NonceSizeX]
-	if _, err := rand.Read(nonce); err != nil {
-		panic(err)
-	}
+	rand.Read(nonce)
 
 	plaintext := req[chacha20poly1305.NonceSizeX : RequestPacketSize-chacha20poly1305.Overhead]
 	binary.BigEndian.PutUint64(plaintext, uint64(time.Now().Unix()))

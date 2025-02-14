@@ -10,9 +10,7 @@ import (
 
 func TestClientServer(t *testing.T) {
 	psk := make([]byte, chacha20poly1305.KeySize)
-	if _, err := rand.Read(psk); err != nil {
-		t.Fatal(err)
-	}
+	rand.Read(psk)
 	client, err := NewClient(psk)
 	if err != nil {
 		t.Fatal(err)

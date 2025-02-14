@@ -63,9 +63,7 @@ func (s *Server) Handle(clientAddrPort netip.AddrPort, req []byte, resp []byte) 
 
 	// Generate response.
 	nonce = resp[:chacha20poly1305.NonceSizeX]
-	if _, err = rand.Read(nonce); err != nil {
-		return err
-	}
+	rand.Read(nonce)
 
 	plaintext = resp[chacha20poly1305.NonceSizeX : ResponsePacketSize-chacha20poly1305.Overhead]
 	binary.BigEndian.PutUint64(plaintext, uint64(time.Now().Unix()))
