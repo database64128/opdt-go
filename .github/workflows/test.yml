@@ -40,5 +40,5 @@ jobs:
       - name: Upload Binaries
         uses: actions/upload-artifact@v4
         with:
-          name: opdt-go-${{ github.sha }}-${{ matrix.os }}-x86-64
+          name: opdt-go-${{ github.sha }}-${{ matrix.os }}-${{ runner.arch }}
           path: opdt-go*
