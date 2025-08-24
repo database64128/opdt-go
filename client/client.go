@@ -121,11 +121,8 @@ func (c *Client) Run(ctx context.Context, interval time.Duration) (<-chan Result
 
 	resultCh := make(chan Result)
 	var wg sync.WaitGroup
-	wg.Add(2)
 
-	go func() {
-		defer wg.Done()
-
+	wg.Go(func() {
 		reqBuf := make([]byte, packet.RequestPacketSize)
 
 		for {
@@ -141,11 +138,9 @@ func (c *Client) Run(ctx context.Context, interval time.Duration) (<-chan Result
 			case <-time.After(interval):
 			}
 		}
-	}()
+	})
 
-	go func() {
-		defer wg.Done()
-
+	wg.Go(func() {
 		respBuf := make([]byte, packet.ResponsePacketSize)
 
 		for {
@@ -177,14 +172,13 @@ func (c *Client) Run(ctx context.Context, interval time.Duration) (<-chan Result
 			default:
 			}
 		}
-	}()
+	})
 
-	go func() {
-		<-ctx.Done()
-		c.serverConn.SetReadDeadline(time.Now())
+	_ = context.AfterFunc(ctx, func() {
+		c.serverConn.SetReadDeadline(conn.ALongTimeAgo)
 		wg.Wait()
 		close(resultCh)
-	}()
+	})
 
 	return resultCh, nil
 }

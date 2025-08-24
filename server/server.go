@@ -7,7 +7,6 @@ import (
 	"net/netip"
 	"os"
 	"sync"
-	"time"
 
 	"github.com/database64128/opdt-go/conn"
 	"github.com/database64128/opdt-go/packet"
@@ -47,12 +46,9 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 	s.serverConn = serverConn.(*net.UDPConn)
 
-	s.wg.Add(1)
-
-	go func() {
+	s.wg.Go(func() {
 		s.recv()
-		s.wg.Done()
-	}()
+	})
 
 	return nil
 }
@@ -118,8 +114,8 @@ func (s *Server) Stop() error {
 		return nil
 	}
 
-	if err := s.serverConn.SetReadDeadline(time.Now()); err != nil {
-		return err
+	if err := s.serverConn.SetReadDeadline(conn.ALongTimeAgo); err != nil {
+		s.logger.Error("Failed to set read deadline on server connection", zap.Error(err))
 	}
 
 	s.wg.Wait()

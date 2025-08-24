@@ -36,7 +36,7 @@ func (b *byteSliceFlag) Set(s string) error {
 
 var (
 	serverConfPath string
-	clientServer   string
+	clientServer   netip.AddrPort
 	clientPSK      byteSliceFlag
 	clientBind     string
 	clientInterval time.Duration
@@ -47,7 +47,7 @@ var (
 
 func init() {
 	flag.StringVar(&serverConfPath, "server", "", "Run as server using the specified config file")
-	flag.StringVar(&clientServer, "client", "", "Run as client using the specified server address")
+	flag.TextVar(&clientServer, "client", netip.AddrPort{}, "Run as client using the specified server address")
 	flag.Var(&clientPSK, "clientPSK", "Pre-shared key in client mode")
 	flag.StringVar(&clientBind, "clientBind", "", "Bind address in client mode (default: let system choose)")
 	flag.DurationVar(&clientInterval, "clientInterval", 0, "Keep sending at specified interval in client mode")
@@ -60,7 +60,7 @@ func main() {
 	flag.Parse()
 
 	serverMode := serverConfPath != ""
-	clientMode := clientServer != ""
+	clientMode := clientServer.IsValid()
 	if serverMode == clientMode {
 		fmt.Fprintln(os.Stderr, "Either -server <path> or -client <address> must be specified.")
 		flag.Usage()
@@ -114,16 +114,8 @@ func main() {
 	}
 
 	if clientMode {
-		serverAddrPort, err := netip.ParseAddrPort(clientServer)
-		if err != nil {
-			logger.Fatal("Failed to parse server address",
-				zap.String("serverAddress", clientServer),
-				zap.Error(err),
-			)
-		}
-
 		clientConfig := client.Config{
-			ServerAddrPort: serverAddrPort,
+			ServerAddrPort: clientServer,
 			BindAddress:    clientBind,
 			PSK:            clientPSK,
 		}
@@ -131,7 +123,7 @@ func main() {
 		c, err := clientConfig.Client()
 		if err != nil {
 			logger.Fatal("Failed to initialize client",
-				zap.String("serverAddress", clientServer),
+				zap.Stringer("serverAddress", clientServer),
 				zap.String("bindAddress", clientBind),
 				zap.Binary("psk", clientPSK),
 				zap.Error(err),
@@ -142,7 +134,7 @@ func main() {
 			resultCh, err := c.Run(ctx, clientInterval)
 			if err != nil {
 				logger.Fatal("Failed to start client",
-					zap.String("serverAddress", clientServer),
+					zap.Stringer("serverAddress", clientServer),
 					zap.String("bindAddress", clientBind),
 					zap.Binary("psk", clientPSK),
 					zap.Error(err),
