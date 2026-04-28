@@ -3,7 +3,7 @@ module github.com/database64128/opdt-go
 go 1.26.0
 
 require (
-	go.uber.org/zap v1.27.1
+	go.uber.org/zap v1.28.0
 	golang.org/x/crypto v0.50.0
 	golang.org/x/sys v0.43.0
 )
