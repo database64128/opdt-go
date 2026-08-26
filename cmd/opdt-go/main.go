@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/database64128/opdt-go/client"
-	"github.com/database64128/opdt-go/jsonhelper"
+	"github.com/database64128/opdt-go/jsoncfg"
 	"github.com/database64128/opdt-go/logging"
 	"github.com/database64128/opdt-go/server"
 	"go.uber.org/zap"
@@ -82,7 +82,7 @@ func main() {
 
 	if serverMode {
 		var sc server.Config
-		if err = jsonhelper.OpenAndDecodeDisallowUnknownFields(serverConfPath, &sc); err != nil {
+		if err = jsoncfg.Load(serverConfPath, &sc); err != nil {
 			logger.Fatal("Failed to load server config",
 				zap.String("path", serverConfPath),
 				zap.Error(err),
