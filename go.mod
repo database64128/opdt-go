@@ -4,7 +4,7 @@ go 1.27.0
 
 require (
 	go.uber.org/zap v1.28.0
-	golang.org/x/crypto v0.55.0
+	golang.org/x/crypto v0.56.0
 	golang.org/x/sys v0.47.0
 )
 
